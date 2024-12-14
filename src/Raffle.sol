@@ -42,6 +42,7 @@ contract Raffle is VRFConsumerBaseV2Plus{
     error Raffle__SendMoreToEnterRaffle();
     error Raffle__TransferFailed();
     error Raffle__RaffleNotOpen();
+    error Raffle__UpkeepNotNeeded(uint256 balance, uint256 players, uint256 state);
 
     //Type declarations
     enum RaffleState {
@@ -90,10 +91,36 @@ contract Raffle is VRFConsumerBaseV2Plus{
         emit RaffelEntered(msg.sender);
     }
 
-    function pickWinner() external {
-        if((block.timestamp - s_lastTimeStamp) < i_interval){
-            revert();
-        } 
+    /**
+     * @dev This function is used to check if the lottery is ready to pick the winner
+     * 1. The time interval has passed
+     * 2. The raffle state is open
+     * 3. The contract has enough balance to pay the winner
+     * 4. There are players in the raffle
+     * @param - ignored
+     * @return upkeepNeeded - True if its time to pick the winner
+     * @return - ignored
+     */
+    function checkUpkeep(
+        bytes memory /* checkData */
+    )
+        public
+        view
+        returns (bool upkeepNeeded, bytes memory /* performData */)
+    {
+        bool timeHasPassed =  (block.timestamp - s_lastTimeStamp) >= i_interval;
+        bool isOpen = s_raffleState == RaffleState.OPEN;
+        bool hasBalance = address(this).balance > 0;
+        bool hasPlayers = s_players.length > 0;
+        upkeepNeeded = timeHasPassed && isOpen && hasBalance && hasPlayers;
+        return (upkeepNeeded, "");
+    }
+
+    function performUpkeep() external {
+        ( bool upkeepNeeded, ) = checkUpkeep("");
+        if(!upkeepNeeded){
+            revert Raffle__UpkeepNotNeeded(address(this).balance, s_players.length, uint256(s_raffleState));
+        }
 
         s_raffleState = RaffleState.CALCULATING;
 
